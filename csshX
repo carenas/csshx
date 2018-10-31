@@ -235,9 +235,10 @@ sub expand_hostrange {
       return [ map { $to_repeat } (1..$2) ];
     }
 
-    my ($user, $host, $port) = CsshX::Process->parse_user_host_port($pat);
+    my ($user, $host, $port, $pem_key) = CsshX::Process->parse_user_host_port($pat);
     $user = $user ? "$user\@" : '';
     $port = $port ? ":$port" : '';
+    $pem_key = $pem_key ? ";$pem_key" : '';
 
     if ($port =~ /^:\[(.+)\]$/) {
         # Port range
@@ -278,7 +279,7 @@ sub all_hosts {
             print "Host: $arg->{name}\n" if $config->debug;
 
             if ($ping) {
-                my ($user, $host, $port) = CsshX::Process->parse_user_host_port($arg->name);
+                my ($user, $host, $port, $pem_key) = CsshX::Process->parse_user_host_port($arg->name);
                 $port ||= getservbyname('ssh', 'tcp') || 22;
 
                 # We cannot identify 'ack's by port, so we have one ping object for each
@@ -1210,9 +1211,13 @@ sub parse_user_host_port {
     #   hostname:port
     #   user@hostname
     #   user@hostname:port
+    #   hostname;/path/to/key
+    #   hostname:port;/path/to/key
+    #   user@hostname;/path/to/key
+    #   user@hostname:port;/path/to/key
     unless (($string =~ tr/://) gt 1) {
-        if ($string =~ /^(?:([^@]+)@)?([^:]+)(?::(.*))?$/) {
-            return ($1, $2, $3);
+        if ($string =~ /^(?:([^@]+)@)?([^:;]+)(?::([^;]+))?(?:;(.*))?$/) {
+            return ($1, $2, $3, $4);
         } else {
             return;
         }
@@ -1348,7 +1353,7 @@ sub new {
 
     $0 = 'csshX - Slave - '.$config->slavehost;
 
-    my ($user, $host, $port) = $pack->parse_user_host_port($config->slavehost);
+    my ($user, $host, $port, $pem_key) = $pack->parse_user_host_port($config->slavehost);
 
     if (my $pid =  fork) {
         close(STDOUT);
@@ -1372,6 +1377,7 @@ sub new {
         my @cmd = ($config->ssh, shellwords($config->ssh_args),
             $user ? ('-l', $user) : (),
             $port ? ('-p', $port) : (),
+            $pem_key ? ('-i', $pem_key) : (),
             $host
         );
         push @cmd, $config->remote_command if length $config->remote_command;
